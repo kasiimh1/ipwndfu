@@ -1,0 +1,253 @@
+#!/usr/bin/python
+# ipwndfu: open-source jailbreaking tool for older iOS devices
+# Author: axi0mX
+
+import binascii, datetime, getopt, hashlib, struct, sys, time
+from os import system
+import dfu, utilities
+import checkm8, usbexec
+from dfuexec import *
+
+def print_help():
+    print 'USAGE: ipwndfu [options]'
+    print 'Interact with an iOS device in DFU Mode.\n'
+    print 'Basic options:'
+    print '  -p\t\t\t\tUSB exploit for pwned DFU Mode'
+    print '  -f file\t\t\tsend file to device in DFU Mode'
+    print 'Advanced options:'
+    print '  --exit\t\t\texit recovery mode'
+    print '  --set-gen\t\t\tpatch 0x1111111111111111 gen on iPad7,3'
+    print '  --demote\t\t\tdemote device to enable JTAG'
+    print '  --dump=address,length\t\tdump memory to stdout'
+    print '  --hexdump=address,length\thexdump memory to stdout'
+    print '  --dump-rom\t\t\tdump SecureROM'
+    print '  --decrypt-gid=hexdata\t\tAES decrypt with GID key'
+    print '  --encrypt-gid=hexdata\t\tAES encrypt with GID key'
+    print '  --decrypt-uid=hexdata\t\tAES decrypt with UID key'
+    print '  --encrypt-uid=hexdata\t\tAES encrypt with UID key'
+
+if __name__ == '__main__':
+    try:
+        advanced = ['set-gen', 'exit','demote', 'dump=', 'hexdump=', 'dump-rom', 'dump-nor=', 'flash-nor=', 'decrypt-gid=', 'encrypt-gid=', 'decrypt-uid=', 'encrypt-uid=']
+        opts, args = getopt.getopt(sys.argv[1:], 'pxf:', advanced)
+    except getopt.GetoptError:
+        print 'ERROR: Invalid arguments provided.'
+        print_help()
+        sys.exit(2)
+
+    if len(opts) == 0:
+        print_help()
+        sys.exit(2)
+
+    for opt, arg in opts:
+        if opt == '-p':
+            device = dfu.acquire_device()
+            serial_number = device.serial_number
+            dfu.release_device(device)
+
+            if 'CPID:8947' in serial_number:
+                checkm8.exploit()
+            elif 'CPID:8950' in serial_number:
+                checkm8.exploit()
+            elif 'CPID:8955' in serial_number:
+                checkm8.exploit()
+            elif 'CPID:8960' in serial_number:
+                checkm8.exploit()
+            elif 'CPID:8002' in serial_number:
+                checkm8.exploit()
+            elif 'CPID:8004' in serial_number:
+                checkm8.exploit()
+            elif 'CPID:8010' in serial_number:
+                checkm8.exploit()
+            elif 'CPID:8011' in serial_number:
+                checkm8.exploit()
+            elif 'CPID:8015' in serial_number:
+                checkm8.exploit()
+            else:
+                print 'Found:', serial_number
+                print 'ERROR: This device is not supported.'
+                sys.exit(1)
+
+        if opt == '-f':
+            try:
+                with open(arg, 'rb') as f:
+                    data = f.read()
+            except IOError:
+                print 'ERROR: Could not read file:', arg
+                sys.exit(1)
+
+            device = dfu.acquire_device()
+            dfu.reset_counters(device)
+            dfu.send_data(device, data)
+            dfu.request_image_validation(device)
+            dfu.release_device(device)
+
+        if opt == '--demote':
+            device = dfu.acquire_device()
+            serial_number = device.serial_number
+            dfu.release_device(device)
+
+            if 'PWND:[checkm8]' in serial_number:
+                pwned = usbexec.PwnedUSBDevice()
+                old_value = pwned.read_memory_uint32(pwned.platform.demotion_reg)
+                print 'Demotion register: 0x%x' % old_value
+                if old_value & 1:
+                    print 'Attempting to demote device.'
+                    pwned.write_memory_uint32(pwned.platform.demotion_reg, old_value & 0xFFFFFFFE)
+                    new_value = pwned.read_memory_uint32(pwned.platform.demotion_reg)
+                    print 'Demotion register: 0x%x' % new_value
+                    if old_value != new_value:
+                        print 'Success!'
+                    else:
+                        print 'Failed.'
+                else:
+                    print 'WARNING: Device is already demoted.'
+            else:
+                print 'ERROR: Demotion is only supported on devices pwned with checkm8 exploit.'
+                sys.exit(1)
+
+        if opt == '--dump':
+            if arg.count(',') != 1:
+                print 'ERROR: You must provide exactly 2 comma separated values: address,length'
+                sys.exit(1)
+            raw_address, raw_length = arg.split(',')
+            address = int(raw_address, 16) if raw_address.startswith('0x') else int(raw_address, 10)
+            length = int(raw_length, 16) if raw_length.startswith('0x') else int(raw_length, 10)
+
+            device = dfu.acquire_device()
+            serial_number = device.serial_number
+            dfu.release_device(device)
+
+            if 'PWND:[checkm8]' in serial_number:
+                device = usbexec.PwnedUSBDevice()
+                sys.stdout.write(device.read_memory(address, length))
+            else:
+                device = PwnedDFUDevice()
+                print device.read_memory(address, length)
+
+        if opt == '--hexdump':
+            if arg.count(',') != 1:
+                print 'ERROR: You must provide exactly 2 comma separated values: address,length'
+                sys.exit(1)
+            raw_address, raw_length = arg.split(',')
+            address = int(raw_address, 16) if raw_address.startswith('0x') else int(raw_address, 10)
+            length = int(raw_length, 16) if raw_length.startswith('0x') else int(raw_length, 10)
+
+            device = dfu.acquire_device()
+            serial_number = device.serial_number
+            dfu.release_device(device)
+
+            if 'PWND:[checkm8]' in serial_number:
+                device = usbexec.PwnedUSBDevice()
+                dump = device.read_memory(address, length)
+                for line in utilities.hex_dump(dump, address).splitlines():
+                    print '%x: %s' % (address, line[10:])
+                    address += 16
+            else:
+                device = PwnedDFUDevice()
+                dump = device.read_memory(address, length)
+                print utilities.hex_dump(dump, address),
+
+        if opt == '--dump-rom':
+            device = dfu.acquire_device()
+            serial_number = device.serial_number
+            dfu.release_device(device)
+
+            if 'PWND:[checkm8]' in serial_number:
+                pwned = usbexec.PwnedUSBDevice()
+                securerom = pwned.read_memory(pwned.platform.rom_base, pwned.platform.rom_size)
+                if hashlib.sha1(securerom).hexdigest() != pwned.platform.rom_sha1:
+                    print hashlib.sha1(securerom).hexdigest()
+                    print 'ERROR: SecureROM was dumped, but the SHA1 hash does not match. Exiting.'
+                    sys.exit(1)
+                chip    = securerom[0x200:0x240].split(' ')[2][:-1]
+                kind    = securerom[0x240:0x280].split('\0')[0]
+                version = securerom[0x280:0x2C0].split('\0')[0][6:]
+                filename = 'SecureROM-%s-%s-%s.dump' % (chip, version, kind)
+                with open(filename, 'wb') as f:
+                    f.write(securerom)
+                print 'Saved:', filename
+            else:
+                device = PwnedDFUDevice()
+                securerom = device.securerom_dump()
+                filename = 'SecureROM-%s-RELEASE.dump' % device.config.version
+                f = open(filename, 'wb')
+                f.write(securerom)
+                f.close()
+                print 'SecureROM dumped to file:', filename
+
+        if opt == '--decrypt-gid':
+            device = dfu.acquire_device()
+            serial_number = device.serial_number
+            dfu.release_device(device)
+
+            if 'PWND:[checkm8]' in serial_number:
+                pwned = usbexec.PwnedUSBDevice()
+                print 'Decrypting with %s GID key.' % pwned.platform.name()
+                print pwned.aes(arg.decode('hex'), usbexec.AES_DECRYPT, usbexec.AES_GID_KEY).encode('hex')
+            else:
+                device = PwnedDFUDevice()
+                print 'Decrypting with S5L%s GID key.' % device.config.cpid
+                print device.aes_hex(arg, AES_DECRYPT, AES_GID_KEY)
+
+        if opt == '--encrypt-gid':
+            device = dfu.acquire_device()
+            serial_number = device.serial_number
+            dfu.release_device(device)
+
+            if 'PWND:[checkm8]' in serial_number:
+                pwned = usbexec.PwnedUSBDevice()
+                print 'Encrypting with %s GID key.' % pwned.platform.name()
+                print pwned.aes(arg.decode('hex'), usbexec.AES_ENCRYPT, usbexec.AES_GID_KEY).encode('hex')
+            else:
+                device = PwnedDFUDevice()
+                print 'Encrypting with S5L%s GID key.' % device.config.cpid
+                print device.aes_hex(arg, AES_ENCRYPT, AES_GID_KEY)
+
+        if opt == '--decrypt-uid':
+            device = dfu.acquire_device()
+            serial_number = device.serial_number
+            dfu.release_device(device)
+
+            if 'PWND:[checkm8]' in serial_number:
+                pwned = usbexec.PwnedUSBDevice()
+                print 'Decrypting with %s device-specific UID key.' % pwned.platform.name()
+                print pwned.aes(arg.decode('hex'), usbexec.AES_DECRYPT, usbexec.AES_UID_KEY).encode('hex')
+            else:
+                device = PwnedDFUDevice()
+                print 'Decrypting with device-specific UID key.'
+                print device.aes_hex(arg, AES_DECRYPT, AES_UID_KEY)
+
+        if opt == '--encrypt-uid':
+            device = dfu.acquire_device()
+            serial_number = device.serial_number
+            dfu.release_device(device)
+
+            if 'PWND:[checkm8]' in serial_number:
+                pwned = usbexec.PwnedUSBDevice()
+                print 'Encrypting with %s device-specific UID key.' % pwned.platform.name()
+                print pwned.aes(arg.decode('hex'), usbexec.AES_ENCRYPT, usbexec.AES_UID_KEY).encode('hex')
+            else:
+                device = PwnedDFUDevice()
+                print 'Encrypting with device-specific UID key.'
+                print device.aes_hex(arg, AES_ENCRYPT, AES_UID_KEY)
+
+        if opt == '--exit':
+            system("python2 ipwnrecovery --exit-recovery-loop")
+
+        if opt == '--set-gen':
+            system("python2 ipwndfu -p")
+            system("python2 rmsigchks.py")
+            print 'Sending patched iBEC'
+            system("./irecovery -f ibec.iPad7,3.img4")      
+            print 'Sending patched iBSS'      
+            system("./irecovery -f ibss.iPad7,3.img4")
+            print 'Setting 0x1111111111111111 generator'
+            system("./irecovery -c 'setenv com.apple.System.boot-nonce 0x1111111111111111'")
+            system("./irecovery -c 'saveenv'")
+            system("./irecovery -c 'setenv auto-boot false'")
+            system("./irecovery -c 'saveenv'")
+            system("./irecovery -c 'reset'")
+            print 'Waiting for Device to surface in REC Mode'
+            time.sleep(4)
+            system("./irecovery -q | grep NONC")
